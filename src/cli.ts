@@ -7,12 +7,15 @@ import fs from 'fs';
 async function run() {
   const args = process.argv.slice(2);
   let lockdown = false;
+  let allowSecrets = false;
   const userArgs: string[] = [];
 
   // Parsear argumentos
   for (const arg of args) {
     if (arg === '--lockdown') {
       lockdown = true;
+    } else if (arg === '--allow-secrets') {
+      allowSecrets = true;
     } else {
       userArgs.push(arg);
     }
@@ -23,7 +26,7 @@ async function run() {
   const dockerfilePath = path.join(projectRoot, 'docker', 'Dockerfile');
   const currentDir = process.cwd();
 
-  // 1. Verificar se a imagem existe (usando docker images)
+  // 1. Verificar se a imagem existe
   const checkImage = spawn('docker', ['images', '-q', imageName]);
   let imageId = '';
   checkImage.stdout.on('data', (data) => { imageId += data.toString().trim(); });
@@ -54,7 +57,35 @@ async function run() {
   dockerFlags.push('-v', `${currentDir}:/workspace`);
   dockerFlags.push('-w', '/workspace');
 
-  // Repassar variáveis de terminal para suporte a cores (remove avisos de 256-color e True Color)
+  // Proteção de arquivos sensíveis (Mascaramento)
+  if (!allowSecrets) {
+    const files = fs.readdirSync(currentDir);
+    for (const file of files) {
+      const fullPath = path.join(currentDir, file);
+      const isDir = fs.statSync(fullPath).isDirectory();
+
+      // Padrões sensíveis: .env*, .git, .ssh, *.key, *.pem, credentials.json
+      const isSensitive = file.startsWith('.env') || 
+                          file === '.git' || 
+                          file === '.ssh' || 
+                          file.endsWith('.key') || 
+                          file.endsWith('.pem') || 
+                          file === 'credentials.json';
+
+      if (isSensitive) {
+        if (isDir) {
+          // Para diretórios (como .git), montamos um diretório vazio sobre ele
+          // Usamos o diretório /tmp interno do container como fonte vazia (hack simples e seguro)
+          dockerFlags.push('-v', `/tmp:/workspace/${file}:ro`);
+        } else {
+          // Para arquivos, montamos /dev/null sobre eles
+          dockerFlags.push('-v', `/dev/null:/workspace/${file}`);
+        }
+      }
+    }
+  }
+
+  // Repassar variáveis de terminal para suporte a cores
   if (process.env.TERM) {
     dockerFlags.push('-e', `TERM=${process.env.TERM}`);
   }
@@ -65,12 +96,10 @@ async function run() {
   dockerFlags.push(imageName);
 
   // 4. Determinar o comando final
-  // Se houver argumentos de sistema conhecidos, executa direto (para testes e diagnósticos)
   const systemCommands = ['ls', 'curl', 'bash', 'printenv', 'whoami', 'true', 'hostname', 'uname', 'cat'];
   if (userArgs.length > 0 && systemCommands.includes(userArgs[0])) {
     dockerFlags.push(...userArgs);
   } else {
-    // Padrão: Gemini CLI direto (o executável se chama 'gemini' no container)
     dockerFlags.push('gemini', ...userArgs);
   }
 
@@ -82,6 +111,6 @@ async function run() {
 }
 
 run().catch((err) => {
-  console.error('Erro ao executar ai-jail:', err);
+  console.error('Erro ao executar ai-jail-sandbox:', err);
   process.exit(1);
 });

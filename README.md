@@ -12,7 +12,7 @@ Para rodar o **AI-Jail Sandbox**, você precisa apenas de:
 2.  **Node.js**: Para instalar e rodar o CLI globalmente.
 3.  **Bash**: Nativo no Linux e macOS. No Windows, utilize o **WSL2**.
 
-## Instalação Global (NPM)
+## Instalação Global
 
 Instale a ferramenta oficial diretamente do registro do NPM:
 ```bash
@@ -43,15 +43,27 @@ Para rodar a IA sem qualquer acesso à rede externa:
 ai-jail-sandbox --lockdown
 ```
 
+### 4. Proteção de Arquivos Sensíveis (Mascaramento)
+Por padrão, o `ai-jail-sandbox` identifica e **mascara** os seguintes arquivos e pastas para que a IA **não consiga ler seu conteúdo** (eles aparecerão como arquivos vazios ou pastas vazias dentro do container):
+
+*   **Arquivos de ambiente**: Todos que começam com `.env*` (ex: `.env`, `.env.local`, `.env.prod`).
+*   **Pastas de sistema e histórico**: `.git`, `.ssh`, `.npm`, `.pnpm`.
+*   **Chaves e credenciais**: `*.key`, `*.pem`, `credentials.json`.
+
+Para desativar essa proteção e permitir que a IA leia esses arquivos (não recomendado para agentes desconhecidos):
+```bash
+ai-jail-sandbox --allow-secrets
+```
+
 ## Arquitetura de Segurança
 
 | Recurso | Proteção |
 | :--- | :--- |
-| **Arquivos** | Apenas o diretório atual é montado em `/workspace` |
-| **Rede** | Bloqueio total via `--network none` (com a flag `--lockdown`) |
-| **Sistema** | Isolamento completo via Docker (o agente não vê o seu `/home` ou `/tmp`) |
-| **Variáveis** | Isolamento total; chaves do host não vazam para o container |
-| **Visual** | Suporte a 256 cores e True Color (24-bit) habilitado |
+| **Arquivos Montados** | Apenas o diretório atual é acessível. |
+| **Arquivos Mascarados** | `.env*`, `.git`, `.ssh`, chaves e credenciais são sobrepostos por `/dev/null`. |
+| **Rede** | Bloqueio total via `--network none` (com a flag `--lockdown`). |
+| **Sistema Host** | O agente não tem acesso a pastas fora do projeto (como `/home` ou `/tmp`). |
+| **Variáveis de Ambiente** | Nenhuma variável do seu computador real é passada para o container. |
 
 ---
 Inspirado por [ai-jail de Fabio Akita (AkitaOnRails)](https://github.com/akitaonrails/ai-jail).

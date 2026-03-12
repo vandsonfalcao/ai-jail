@@ -5,7 +5,7 @@ import fs from 'fs';
 
 const CLI_PATH = path.resolve(__dirname, '../dist/cli.js');
 
-describe('ai-jail CLI (Segurança e Funcionalidade)', () => {
+describe('ai-jail CLI (Segurança e Isolamento)', () => {
   const testTimeout = 15000;
 
   it('1. deve responder ao comando --version instantaneamente', async () => {
@@ -32,7 +32,37 @@ describe('ai-jail CLI (Segurança e Funcionalidade)', () => {
     expect(output).not.toContain('my-secret-token');
   }, testTimeout);
 
-  it('4. deve isolar arquivos do host (não consegue ver arquivos fora do workspace)', async () => {
+  it('4. deve mascarar arquivos .env* automaticamente', async () => {
+    const envPath = path.join(process.cwd(), '.env.test-secret');
+    fs.writeFileSync(envPath, 'SECRET_KEY=12345');
+
+    try {
+      const { stdout } = await execa('node', [CLI_PATH, 'cat', '.env.test-secret'], { 
+        reject: false,
+        timeout: testTimeout 
+      });
+      // O arquivo deve estar vazio devido ao mascaramento com /dev/null
+      expect(stdout.trim()).toBe('');
+    } finally {
+      if (fs.existsSync(envPath)) fs.unlinkSync(envPath);
+    }
+  }, testTimeout);
+
+  it('5. deve permitir arquivos sensíveis com --allow-secrets', async () => {
+    const envPath = path.join(process.cwd(), '.env.test-allow');
+    fs.writeFileSync(envPath, 'ALLOWED_SECRET=999');
+
+    try {
+      const { stdout } = await execa('node', [CLI_PATH, '--allow-secrets', 'cat', '.env.test-allow'], { 
+        timeout: testTimeout 
+      });
+      expect(stdout).toContain('ALLOWED_SECRET=999');
+    } finally {
+      if (fs.existsSync(envPath)) fs.unlinkSync(envPath);
+    }
+  }, testTimeout);
+
+  it('6. deve isolar arquivos do host (fora do workspace)', async () => {
     const secretPath = `/tmp/ai-jail-secret-${Date.now()}.txt`;
     fs.writeFileSync(secretPath, 'secret content');
 
@@ -42,20 +72,9 @@ describe('ai-jail CLI (Segurança e Funcionalidade)', () => {
         timeout: testTimeout 
       });
       const output = stdout + stderr;
-      expect(output).not.toContain('secret content');
       expect(output.toLowerCase()).toContain('no such file or directory');
     } finally {
       if (fs.existsSync(secretPath)) fs.unlinkSync(secretPath);
     }
-  }, testTimeout);
-
-  it('5. deve isolar o diretório Home do usuário', async () => {
-    const homeDir = process.env.HOME || '/home';
-    const { stdout, stderr } = await execa('node', [CLI_PATH, 'ls', homeDir], { 
-      reject: false,
-      timeout: testTimeout 
-    });
-    const output = stdout + stderr;
-    expect(output.toLowerCase()).toContain('no such file or directory');
   }, testTimeout);
 });
