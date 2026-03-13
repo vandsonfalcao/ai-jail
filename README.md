@@ -4,24 +4,25 @@
 
 **AI-Jail Sandbox** é uma ferramenta CLI oficial para executar o agente de IA Gemini em um ambiente Docker isolado, protegendo seu sistema host de comandos inseguros e vazamento de dados.
 
-## Pré-requisitos
+## Compatibilidade por Sistema Operacional
 
-Para rodar o **AI-Jail Sandbox**, você precisa apenas de:
+### 🐧 Linux (Nativo)
+O suporte é nativo. Certifique-se de que o Docker está instalado e o seu usuário pertence ao grupo `docker`.
+*   **Instalação**: `npm install -g ai-jail-sandbox` ou `pnpm add -g ai-jail-sandbox`
 
-1.  **Docker**: O motor que cria o ambiente isolado. Certifique-se de que o serviço está rodando e que seu usuário tem permissão para executar comandos `docker` sem `sudo`.
-2.  **Node.js**: Para instalar e rodar o CLI globalmente.
-3.  **Bash**: Nativo no Linux e macOS. No Windows, utilize o **WSL2**.
+### 🪟 Windows (via WSL2)
+O uso no Windows é suportado **exclusivamente através do WSL2** (Windows Subsystem for Linux).
+1.  Instale o **WSL2** e uma distro Linux (ex: Ubuntu) da Microsoft Store.
+2.  Instale o **Docker Desktop** para Windows e ative a integração com o WSL2 nas configurações.
+3.  Abra o terminal do Ubuntu dentro do Windows.
+4.  Instale o Node.js e a lib: `npm install -g ai-jail-sandbox`
 
-## Instalação Global
+### 🍎 macOS
+Suporte via **Docker Desktop** ou **OrbStack**.
+*   Certifique-se de que o binário `docker` está acessível no seu terminal.
+*   **Instalação**: `npm install -g ai-jail-sandbox`
 
-Instale a ferramenta oficial diretamente do registro do NPM:
-```bash
-npm install -g ai-jail-sandbox
-```
-*Ou usando pnpm:*
-```bash
-pnpm add -g ai-jail-sandbox
-```
+---
 
 ## Como Usar
 
@@ -44,13 +45,13 @@ ai-jail-sandbox --lockdown
 ```
 
 ### 4. Proteção de Arquivos Sensíveis (Mascaramento)
-Por padrão, o `ai-jail-sandbox` identifica e **mascara** os seguintes arquivos e pastas para que a IA **não consiga ler seu conteúdo** (eles aparecerão como arquivos vazios ou pastas vazias dentro do container):
+Por padrão, o `ai-jail-sandbox` identifica e **mascara** os seguintes arquivos e pastas para que a IA **não consiga ler seu conteúdo**:
 
-*   **Arquivos de ambiente**: Todos que começam com `.env*` (ex: `.env`, `.env.local`, `.env.prod`).
-*   **Pastas de sistema e histórico**: `.git`, `.ssh`, `.npm`, `.pnpm`.
-*   **Chaves e credenciais**: `*.key`, `*.pem`, `credentials.json`.
+*   **Arquivos de ambiente**: Todos que começam com `.env*` (ex: `.env`, `.env.local`).
+*   **Pastas de sistema**: `.git`, `.ssh`, `.npm`, `.pnpm`.
+*   **Chaves**: `*.key`, `*.pem`, `credentials.json`.
 
-Para desativar essa proteção e permitir que a IA leia esses arquivos (não recomendado para agentes desconhecidos):
+Para desativar essa proteção:
 ```bash
 ai-jail-sandbox --allow-secrets
 ```
@@ -62,8 +63,8 @@ ai-jail-sandbox --allow-secrets
 | **Arquivos Montados** | Apenas o diretório atual é acessível. |
 | **Arquivos Mascarados** | `.env*`, `.git`, `.ssh`, chaves e credenciais são sobrepostos por `/dev/null`. |
 | **Rede** | Bloqueio total via `--network none` (com a flag `--lockdown`). |
-| **Sistema Host** | O agente não tem acesso a pastas fora do projeto (como `/home` ou `/tmp`). |
-| **Variáveis de Ambiente** | Nenhuma variável do seu computador real é passada para o container. |
+| **Sistema Host** | O agente não tem acesso a pastas fora do projeto. |
+| **Variáveis de Ambiente** | Nenhuma variável do computador real é passada para o container. |
 
 ---
 Inspirado por [ai-jail de Fabio Akita (AkitaOnRails)](https://github.com/akitaonrails/ai-jail).
