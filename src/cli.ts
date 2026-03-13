@@ -3,11 +3,14 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 
 async function run() {
   const args = process.argv.slice(2);
   let lockdown = false;
   let allowSecrets = false;
+  let readOnly = false;
+  let unlimited = false;
   const userArgs: string[] = [];
 
   // Parsear argumentos
@@ -16,6 +19,10 @@ async function run() {
       lockdown = true;
     } else if (arg === '--allow-secrets') {
       allowSecrets = true;
+    } else if (arg === '--read-only') {
+      readOnly = true;
+    } else if (arg === '--unlimited') {
+      unlimited = true;
     } else {
       userArgs.push(arg);
     }
@@ -47,6 +54,13 @@ async function run() {
     dockerFlags.push('--network', 'none');
   }
 
+  // Limites de Hardware (Padrão)
+  if (!unlimited) {
+    dockerFlags.push('--cpus', '2');
+    dockerFlags.push('--memory', '2g');
+    dockerFlags.push('--pids-limit', '256');
+  }
+
   // Detectar TTY
   if (process.stdin.isTTY) {
     dockerFlags.push('-it');
@@ -54,32 +68,47 @@ async function run() {
     dockerFlags.push('-i');
   }
 
-  dockerFlags.push('-v', `${currentDir}:/workspace`);
+  // Montagem do Workspace
+  const mountMode = readOnly ? ':ro' : '';
+  dockerFlags.push('-v', `${currentDir}:/workspace${mountMode}`);
   dockerFlags.push('-w', '/workspace');
+
+  // Cache Persistente para NPM
+  const cacheDir = path.join(os.homedir(), '.ai-jail-sandbox', 'cache', 'npm');
+  if (!fs.existsSync(cacheDir)) {
+    fs.mkdirSync(cacheDir, { recursive: true });
+  }
+  dockerFlags.push('-v', `${cacheDir}:/root/.npm`);
 
   // Proteção de arquivos sensíveis (Mascaramento)
   if (!allowSecrets) {
+    const sensitivePatterns = new Set(['.git', '.ssh', '.npm', '.pnpm', 'credentials.json']);
+    
+    // Ler .gitignore para adicionar padrões extras
+    const gitignorePath = path.join(currentDir, '.gitignore');
+    if (fs.existsSync(gitignorePath)) {
+      const gitignoreContent = fs.readFileSync(gitignorePath, 'utf-8');
+      gitignoreContent.split('\n').forEach(line => {
+        const pattern = line.trim();
+        if (pattern && !pattern.startsWith('#')) {
+          sensitivePatterns.add(pattern.replace(/\/$/, '')); // Remove trailing slash
+        }
+      });
+    }
+
     const files = fs.readdirSync(currentDir);
     for (const file of files) {
-      const fullPath = path.join(currentDir, file);
-      const isDir = fs.statSync(fullPath).isDirectory();
-
-      // Padrões sensíveis: .env*, .git, .ssh, *.key, *.pem, credentials.json
-      const isSensitive = file.startsWith('.env') || 
-                          file === '.git' || 
-                          file === '.ssh' || 
-                          file.endsWith('.key') || 
-                          file.endsWith('.pem') || 
-                          file === 'credentials.json';
+      const isSensitive = file.startsWith('.env') || sensitivePatterns.has(file) || file.endsWith('.key') || file.endsWith('.pem');
 
       if (isSensitive) {
-        if (isDir) {
-          // Para diretórios (como .git), montamos um diretório vazio sobre ele
-          // Usamos o diretório /tmp interno do container como fonte vazia (hack simples e seguro)
-          dockerFlags.push('-v', `/tmp:/workspace/${file}:ro`);
-        } else {
-          // Para arquivos, montamos /dev/null sobre eles
-          dockerFlags.push('-v', `/dev/null:/workspace/${file}`);
+        const fullPath = path.join(currentDir, file);
+        if (fs.existsSync(fullPath)) {
+          const isDir = fs.statSync(fullPath).isDirectory();
+          if (isDir) {
+            dockerFlags.push('-v', `/tmp:/workspace/${file}:ro`);
+          } else {
+            dockerFlags.push('-v', `/dev/null:/workspace/${file}`);
+          }
         }
       }
     }
@@ -96,7 +125,7 @@ async function run() {
   dockerFlags.push(imageName);
 
   // 4. Determinar o comando final
-  const systemCommands = ['ls', 'curl', 'bash', 'printenv', 'whoami', 'true', 'hostname', 'uname', 'cat'];
+  const systemCommands = ['ls', 'curl', 'bash', 'printenv', 'whoami', 'true', 'hostname', 'uname', 'cat', 'touch', 'mkdir', 'rm'];
   if (userArgs.length > 0 && systemCommands.includes(userArgs[0])) {
     dockerFlags.push(...userArgs);
   } else {

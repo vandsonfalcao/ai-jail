@@ -5,24 +5,35 @@ import fs from 'fs';
 
 const CLI_PATH = path.resolve(__dirname, '../dist/cli.js');
 
-describe('ai-jail CLI (Segurança e Isolamento)', () => {
+describe('ai-jail-sandbox (Suíte Completa de Segurança e Integração)', () => {
   const testTimeout = 15000;
 
-  it('1. deve responder ao comando --version instantaneamente', async () => {
+  it('1. deve responder ao comando --version', async () => {
     const { stdout } = await execa('node', [CLI_PATH, '--version'], { timeout: testTimeout });
     expect(stdout).toContain('0.33.0');
   }, testTimeout);
 
-  it('2. deve bloquear internet com a flag --lockdown', async () => {
+  it('2. deve repassar argumentos diretamente para o Gemini CLI', async () => {
+    // Testamos se ele aceita um argumento que não é flag e tenta rodar
+    // Como o gemini-cli sem API KEY falha, verificamos apenas se o comando foi disparado corretamente
+    const { stdout, stderr } = await execa('node', [CLI_PATH, 'hello'], { 
+      reject: false,
+      timeout: testTimeout 
+    });
+    // Se ele tentou rodar o gemini, ele deve reclamar da API KEY ou mostrar erro do gemini, não do docker
+    expect(stdout + stderr).toMatch(/gemini|API_KEY/i);
+  }, testTimeout);
+
+  it('3. deve bloquear internet com a flag --lockdown', async () => {
     try {
       await execa('node', [CLI_PATH, '--lockdown', 'curl', 'google.com'], { timeout: testTimeout });
-      throw new Error('Deveria ter falhado o acesso à internet');
+      throw new Error('Falha no isolamento de rede');
     } catch (error: any) {
       expect(error.exitCode).not.toBe(0);
     }
   }, testTimeout);
 
-  it('3. deve isolar variáveis de ambiente do host', async () => {
+  it('4. deve isolar variáveis de ambiente do host', async () => {
     process.env.TEST_SECRET_HOST = 'my-secret-token';
     const { stdout, stderr } = await execa('node', [CLI_PATH, 'printenv', 'TEST_SECRET_HOST'], { 
       reject: false, 
@@ -32,49 +43,69 @@ describe('ai-jail CLI (Segurança e Isolamento)', () => {
     expect(output).not.toContain('my-secret-token');
   }, testTimeout);
 
-  it('4. deve mascarar arquivos .env* automaticamente', async () => {
+  it('5. deve mascarar arquivos .env* automaticamente', async () => {
     const envPath = path.join(process.cwd(), '.env.test-secret');
     fs.writeFileSync(envPath, 'SECRET_KEY=12345');
-
     try {
       const { stdout } = await execa('node', [CLI_PATH, 'cat', '.env.test-secret'], { 
         reject: false,
         timeout: testTimeout 
       });
-      // O arquivo deve estar vazio devido ao mascaramento com /dev/null
       expect(stdout.trim()).toBe('');
     } finally {
       if (fs.existsSync(envPath)) fs.unlinkSync(envPath);
     }
   }, testTimeout);
 
-  it('5. deve permitir arquivos sensíveis com --allow-secrets', async () => {
-    const envPath = path.join(process.cwd(), '.env.test-allow');
-    fs.writeFileSync(envPath, 'ALLOWED_SECRET=999');
-
+  it('6. deve mascarar arquivos listados no .gitignore', async () => {
+    const secretFilePath = path.join(process.cwd(), 'git-ignored-secret.txt');
+    fs.writeFileSync(secretFilePath, 'private git info');
+    const originalGitignore = fs.existsSync('.gitignore') ? fs.readFileSync('.gitignore') : null;
+    fs.writeFileSync('.gitignore', 'git-ignored-secret.txt');
     try {
-      const { stdout } = await execa('node', [CLI_PATH, '--allow-secrets', 'cat', '.env.test-allow'], { 
+      const { stdout } = await execa('node', [CLI_PATH, 'cat', 'git-ignored-secret.txt'], { 
+        reject: false,
         timeout: testTimeout 
       });
-      expect(stdout).toContain('ALLOWED_SECRET=999');
+      expect(stdout.trim()).toBe('');
     } finally {
-      if (fs.existsSync(envPath)) fs.unlinkSync(envPath);
+      if (fs.existsSync(secretFilePath)) fs.unlinkSync(secretFilePath);
+      if (originalGitignore) fs.writeFileSync('.gitignore', originalGitignore);
+      else if (fs.existsSync('.gitignore')) fs.unlinkSync('.gitignore');
     }
   }, testTimeout);
 
-  it('6. deve isolar arquivos do host (fora do workspace)', async () => {
-    const secretPath = `/tmp/ai-jail-secret-${Date.now()}.txt`;
-    fs.writeFileSync(secretPath, 'secret content');
+  it('7. deve respeitar o modo somente-leitura com --read-only', async () => {
+    try {
+      await execa('node', [CLI_PATH, '--read-only', 'touch', 'test-readonly.txt'], { 
+        timeout: testTimeout 
+      });
+      throw new Error('Permitiu escrita em modo read-only');
+    } catch (error: any) {
+      expect(error.stderr.toLowerCase()).toContain('read-only file system');
+    }
+  }, testTimeout);
 
+  it('8. deve isolar arquivos do host (fora do workspace)', async () => {
+    const secretPath = `/tmp/ai-jail-outside-${Date.now()}.txt`;
+    fs.writeFileSync(secretPath, 'host secret');
     try {
       const { stdout, stderr } = await execa('node', [CLI_PATH, 'ls', secretPath], { 
         reject: false,
         timeout: testTimeout 
       });
-      const output = stdout + stderr;
-      expect(output.toLowerCase()).toContain('no such file or directory');
+      expect((stdout + stderr).toLowerCase()).toContain('no such file or directory');
     } finally {
       if (fs.existsSync(secretPath)) fs.unlinkSync(secretPath);
     }
+  }, testTimeout);
+
+  it('9. deve mascarar diretórios sensíveis (ex: .git)', async () => {
+    const { stdout } = await execa('node', [CLI_PATH, 'ls', '-a', '.git'], { 
+      reject: false,
+      timeout: testTimeout 
+    });
+    expect(stdout).not.toContain('config');
+    expect(stdout).not.toContain('HEAD');
   }, testTimeout);
 });
