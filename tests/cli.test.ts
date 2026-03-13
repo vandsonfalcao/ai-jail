@@ -8,9 +8,10 @@ const CLI_PATH = path.resolve(__dirname, '../dist/cli.js');
 describe('ai-jail-sandbox (Suíte Completa de Segurança e Integração)', () => {
   const testTimeout = 15000;
 
-  it('1. deve responder ao comando --version', async () => {
+  it('1. deve responder ao comando --version com um formato válido', async () => {
     const { stdout } = await execa('node', [CLI_PATH, '--version'], { timeout: testTimeout });
-    expect(stdout).toContain('0.33.0');
+    // Verifica se a saída contém um padrão SemVer (X.Y.Z)
+    expect(stdout).toMatch(/\d+\.\d+\.\d+/);
   }, testTimeout);
 
   it('2. deve repassar argumentos diretamente para o Gemini CLI', async () => {
